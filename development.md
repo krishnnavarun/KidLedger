@@ -12,6 +12,7 @@ This living document tracks the phase-by-phase implementation of **KidLedger Wal
 - [ ] **Phase 4: Simulated Merchants, Rule Engine & Approval Workflow**
 - [ ] **Phase 5: Money Requests & In-App Notifications**
 - [ ] **Phase 6: Frontend Development (React + Tailwind)**
+- [x] **DevOps Phase: Continuous Integration (CI) with GitHub Actions**
 - [ ] **Phase 7: Step-by-Step Docker Containerization & Deployment**
 - [ ] **Phase 8 (v2): Subscriptions, Savings Goals & LLM Spending Insights**
 
@@ -176,6 +177,43 @@ sequenceDiagram
 - Insufficient funds safety checks preventing negative balances.
 - Real-time reconciliation audit proving balance equals sum of ledger entries.
 - Immutable schema guard preventing ledger tampering or deletion.
+
+---
+
+## 🚀 DevOps Phase: Continuous Integration (CI) with GitHub Actions
+
+### 1. Key Engineering Concepts & Interview Talking Points
+
+1. **What is Continuous Integration (CI)?**
+   - CI is an automated software practice where team members integrate their code into a central repository frequently. Every integration is verified by an automated build and test runner to detect integration errors as quickly as possible.
+2. **`npm ci` vs `npm install` in CI Runners**
+   - *Interview Question:* Why use `npm ci` inside a pipeline?
+   - *Answer:* `npm install` can update transitive dependencies and alter `package-lock.json`. `npm ci` strictly reads `package-lock.json`, deletes existing `node_modules`, and guarantees an identical, deterministic environment every single build. It is also significantly faster.
+3. **Dependency Caching (`cache: 'npm'`)**
+   - In GitHub Actions, each job runs on an ephemeral VM that is destroyed after completion. By caching the `~/.npm` directory against a hash of `server/package-lock.json`, unchanged dependencies are pulled from cache in seconds instead of downloading over the internet.
+4. **Isolated Test Execution**
+   - The CI runner runs `npm test` using `mongodb-memory-server` in replica set mode. No live databases or external cloud infrastructure need to be provisioned for testing, keeping test runs free and instant.
+
+### 2. GitHub Actions CI Pipeline Workflow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Dev as Developer (You)
+    participant GH as GitHub Remote (main)
+    participant Runner as GitHub Actions Runner (Ubuntu VM)
+    participant Vitest as Vitest Test Runner
+
+    Dev->>GH: git push origin main
+    GH->>Runner: Trigger Workflow (.github/workflows/ci.yml)
+    Runner->>Runner: 1. actions/checkout@v4 (Clone Code)
+    Runner->>Runner: 2. actions/setup-node@v4 (Node.js 20.x + Cache)
+    Runner->>Runner: 3. npm ci (Clean & Fast Dependency Installation)
+    Runner->>Vitest: 4. npm test (Execute 32 Tests across 5 Suites)
+    Vitest-->>Runner: All 32 Tests Passed!
+    Runner-->>GH: Report Job Status: SUCCESS (Green Checkmark ✅)
+    GH-->>Dev: Commit Verified & Ready for Deployment
+```
 
 ---
 

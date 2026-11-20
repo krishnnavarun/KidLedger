@@ -1,0 +1,41 @@
+name: KidLedger Backend CI
+
+# Triggers: Run this workflow automatically on every push or pull request to the main branch
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Run Automated Tests & Health Check
+    # The clean virtual machine hosted by GitHub
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Download code from the repository
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # Step 2: Set up the exact Node.js runtime with dependency caching
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+
+      # Step 3: Install exact dependencies using npm ci (Fast & Reproducible)
+      - name: Install Server Dependencies
+        working-directory: ./server
+        run: npm ci
+
+      # Step 4: Run the Vitest Automated Test Suite (32 tests across 5 suites)
+      - name: Run Vitest Test Suite
+        working-directory: ./server
+        env:
+          NODE_ENV: test
+          JWT_SECRET: ci_test_access_secret_min_32_characters_long
+          JWT_REFRESH_SECRET: ci_test_refresh_secret_min_32_characters_long
+        run: npm test
