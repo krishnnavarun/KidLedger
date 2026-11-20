@@ -24,6 +24,7 @@ const ruleSchema = new mongoose.Schema(
         'blocked_category',
         'blocked_merchant',
         'allow_only',
+        'p2p_daily_limit',
       ],
       required: true,
     },

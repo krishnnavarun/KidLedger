@@ -10,6 +10,7 @@ const createChildSchema = z.object({
   name: z.string().trim().min(2, 'Name must be at least 2 characters').max(100),
   email: z.string().trim().email('Invalid email address').toLowerCase(),
   password: z.string().min(8, 'Password must be at least 8 characters'),
+  phoneNumber: z.string().trim().optional(),
   dateOfBirth: z
     .string()
     .refine((val) => !isNaN(Date.parse(val)), {

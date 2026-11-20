@@ -10,6 +10,9 @@ import authRoutes from './routes/auth.routes.js';
 import familyRoutes from './routes/family.routes.js';
 import walletRoutes from './routes/wallet.routes.js';
 import transactionRoutes from './routes/transaction.routes.js';
+import merchantRoutes from './routes/merchant.routes.js';
+import ruleRoutes from './routes/rule.routes.js';
+import paymentRoutes from './routes/payment.routes.js';
 
 export function createApp() {
   const app = express();
@@ -35,12 +38,35 @@ export function createApp() {
     app.use(requestLogger);
   }
 
+  // Root welcome route
+  app.get('/', (req, res) => {
+    res.status(200).json({
+      success: true,
+      message: 'Welcome to KidLedger Wallet API',
+      version: 'v1',
+      health: '/api/v1/health',
+      endpoints: {
+        health: 'GET /api/v1/health',
+        auth: '/api/v1/auth',
+        family: '/api/v1/family',
+        wallets: '/api/v1/wallets',
+        transactions: '/api/v1/transactions',
+        merchants: '/api/v1/merchants',
+        rules: '/api/v1/rules',
+        payments: '/api/v1/payments',
+      },
+    });
+  });
+
   // API v1 Routes
   app.use('/api/v1/health', healthRoutes);
   app.use('/api/v1/auth', authRoutes);
   app.use('/api/v1/family', familyRoutes);
   app.use('/api/v1/wallets', walletRoutes);
   app.use('/api/v1/transactions', transactionRoutes);
+  app.use('/api/v1/merchants', merchantRoutes);
+  app.use('/api/v1/rules', ruleRoutes);
+  app.use('/api/v1/payments', paymentRoutes);
 
   // 404 and Error Handling
   app.use(notFoundHandler);

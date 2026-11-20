@@ -4,7 +4,7 @@ const transactionSchema = new mongoose.Schema(
   {
     type: {
       type: String,
-      enum: ['topup', 'transfer', 'payment', 'subscription'],
+      enum: ['topup', 'transfer', 'payment', 'peer_transfer', 'subscription'],
       required: true,
     },
     fromWalletId: {

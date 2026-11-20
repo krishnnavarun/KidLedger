@@ -13,10 +13,10 @@ This living document tracks all API endpoints in **KidLedger Wallet**, including
 - [x] **Authentication** (5 Endpoints)
 - [x] **Family & Child Accounts** (2 Endpoints)
 - [x] **Wallets & Ledger** (5 Endpoints)
-- [x] **Transactions** (2 Endpoints)
-- [ ] **Merchants** (1 Endpoint — In Progress)
-- [ ] **Spending Rules** (4 Endpoints — In Progress)
-- [ ] **Payments & Approvals** (3 Endpoints — In Progress)
+- [x] **Transactions** (4 Endpoints)
+- [x] **Merchants** (1 Endpoint)
+- [x] **Spending Rules** (4 Endpoints)
+- [x] **Payments & Approvals** (3 Endpoints)
 
 ---
 
@@ -384,15 +384,182 @@ This living document tracks all API endpoints in **KidLedger Wallet**, including
 
 ---
 
-## 🛍️ 6. Merchants & Spending Controls (Phase 4 — Upcoming)
+## 🛍️ 6. Merchants & Categories (`/api/v1/merchants`)
 
-| Method | Endpoint | Role | Description |
-|---|---|---|---|
-| `GET` | `/api/v1/merchants` | Public / Auth | List seeded merchants and categories |
-| `POST` | `/api/v1/rules` | `parent` ONLY | Create spending rule for child |
-| `GET` | `/api/v1/rules?childId=...` | `parent` ONLY | View child's active spending rules |
-| `PATCH` | `/api/v1/rules/:id` | `parent` ONLY | Toggle/update rule (active/value) |
-| `DELETE` | `/api/v1/rules/:id` | `parent` ONLY | Deactivate spending rule |
-| `POST` | `/api/v1/payments` | `child` ONLY | Child pays simulated merchant |
-| `POST` | `/api/v1/transactions/:id/approve` | `parent` ONLY | Parent approves pending transaction |
-| `POST` | `/api/v1/transactions/:id/decline` | `parent` ONLY | Parent declines pending transaction |
+### `GET /api/v1/merchants`
+* **Access:** Public or Authenticated
+* **Description:** Lists all seeded simulated merchants (e.g., Steam Games, Subway, Bookstore).
+* **Response `200 OK`:**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "merchants": [
+        {
+          "id": "673m...",
+          "name": "Steam Games",
+          "category": "gaming",
+          "description": "Video games and in-game items"
+        },
+        {
+          "id": "673n...",
+          "name": "Subway",
+          "category": "fast_food",
+          "description": "Sandwiches and meals"
+        }
+      ]
+    }
+  }
+  ```
+
+---
+
+## 🛡️ 7. Spending Rules (`/api/v1/rules`)
+
+### `POST /api/v1/rules`
+* **Access:** `parent` ONLY
+* **Headers:** `Authorization: Bearer <parentAccessToken>`
+* **Description:** Parent configures spending limits or blocks for a linked child.
+* **Body:**
+  ```json
+  {
+    "childId": "673f...",
+    "type": "blocked_category",
+    "value": "gaming",
+    "actionOnViolation": "BLOCK"
+  }
+  ```
+  *(Other supported types: `per_txn_cap`, `daily_limit`, `weekly_limit`, `monthly_limit`, `blocked_merchant`, `allow_only`)*
+* **Response `201 Created`:**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "rule": {
+        "id": "673o...",
+        "childId": "673f...",
+        "type": "blocked_category",
+        "value": "gaming",
+        "actionOnViolation": "BLOCK",
+        "active": true
+      }
+    }
+  }
+  ```
+
+### `GET /api/v1/rules?childId=<childId>`
+* **Access:** `parent` ONLY
+* **Headers:** `Authorization: Bearer <parentAccessToken>`
+* **Description:** View all spending rules configured for the given child.
+
+### `PATCH /api/v1/rules/:id`
+* **Access:** `parent` ONLY
+* **Headers:** `Authorization: Bearer <parentAccessToken>`
+* **Body:**
+  ```json
+  {
+    "active": false,
+    "value": 15000
+  }
+  ```
+
+### `DELETE /api/v1/rules/:id`
+* **Access:** `parent` ONLY
+* **Headers:** `Authorization: Bearer <parentAccessToken>`
+* **Description:** Deletes a rule.
+
+---
+
+## 💳 8. Payments & Approvals (`/api/v1/payments` & `/api/v1/transactions`)
+
+### `POST /api/v1/payments`
+* **Access:** `child` ONLY
+* **Headers:**
+  - `Authorization: Bearer <childAccessToken>`
+  - `Idempotency-Key: <unique-string>`
+* **Body:**
+  ```json
+  {
+    "merchantId": "673n...",
+    "amount": 15000,
+    "note": "Lunch at Subway"
+  }
+  ```
+* **Outcomes:**
+  - **Approved:** `201 Created` $\rightarrow$ `{ "status": "completed", "decision": "APPROVE" }` (wallet debited).
+  - **Blocked:** `200 OK` $\rightarrow$ `{ "status": "declined", "decision": "BLOCK", "reason": "..." }` (no money moved).
+  - **Needs Approval:** `200 OK` $\rightarrow$ `{ "status": "pending", "decision": "NEEDS_APPROVAL", "reason": "..." }` (waiting for parent).
+
+### `POST /api/v1/payments/peer` (Pay Friend via Mobile Number)
+* **Access:** `child` ONLY
+* **Headers:**
+  - `Authorization`: `Bearer <childAccessToken>`
+  - `Idempotency-Key: <unique-string>`
+* **Description:** Sends money to a friend's registered child account by mobile number. Enforces the **max ₹300/day (30,000 paise)** guardrail.
+* **Body:**
+  ```json
+  {
+    "recipientPhone": "9876543210",
+    "amount": 15000,
+    "note": "Split pizza bill"
+  }
+  ```
+* **Outcomes:**
+  - **Within Limit ($\le$ ₹300/day):** `201 Created` $\rightarrow$ Deducts sender, credits friend, writes 2 ledger entries.
+  - **Exceeds Limit (> ₹300/day):** Returns `200 OK` with `status: "declined"` or `status: "pending"` (requires parent approval).
+
+### `POST /api/v1/payments/scan` (Shop QR Code Scanner)
+* **Access:** `child` ONLY
+* **Headers:**
+  - `Authorization`: `Bearer <childAccessToken>`
+  - `Idempotency-Key: <unique-string>`
+* **Description:** Child scans simulated UPI / KidLedger shop QR codes (e.g. `upi://pay?pa=subway@upi&merchantId=...&am=120.00`).
+* **Body:**
+  ```json
+  {
+    "qrCode": "upi://pay?pa=subway@upi&merchantId=673n...&am=120.00"
+  }
+  ```
+* **Response `201 Created`:** Evaluates shop category against rules and executes payment.
+
+### `POST /api/v1/transactions/:id/approve`
+* **Access:** `parent` ONLY
+* **Headers:** `Authorization: Bearer <parentAccessToken>`
+* **Description:** Parent approves a pending transaction. Deducts child wallet balance atomically and writes ledger entry.
+* **Response `200 OK`:**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "transaction": {
+        "id": "673p...",
+        "status": "completed"
+      },
+      "message": "Transaction approved successfully"
+    }
+  }
+  ```
+
+### `POST /api/v1/transactions/:id/decline`
+* **Access:** `parent` ONLY
+* **Headers:** `Authorization: Bearer <parentAccessToken>`
+* **Body (Optional):**
+  ```json
+  {
+    "reason": "You have enough books for now"
+  }
+  ```
+* **Response `200 OK`:**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "transaction": {
+        "id": "673p...",
+        "status": "declined"
+      },
+      "message": "Transaction declined successfully"
+    }
+  }
+  ```
+

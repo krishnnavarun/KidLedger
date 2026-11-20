@@ -7,7 +7,7 @@ export class FamilyService {
   /**
    * Parent creates and links a child account.
    */
-  static async createChildAccount(parentId, { name, email, password, dateOfBirth }) {
+  static async createChildAccount(parentId, { name, email, password, phoneNumber, dateOfBirth }) {
     // 1. Verify parent exists and is a parent
     const parent = await User.findById(parentId);
     if (!parent || parent.role !== 'parent') {
@@ -20,6 +20,13 @@ export class FamilyService {
       throw new AppError('An account with this email already exists', 409, 'EMAIL_EXISTS');
     }
 
+    if (phoneNumber) {
+      const existingPhone = await User.findOne({ phoneNumber });
+      if (existingPhone) {
+        throw new AppError('An account with this phone number already exists', 409, 'PHONE_EXISTS');
+      }
+    }
+
     // 3. Parse date of birth if provided
     const dob = dateOfBirth ? new Date(dateOfBirth) : null;
 
@@ -28,6 +35,7 @@ export class FamilyService {
     const child = await User.create({
       name,
       email,
+      phoneNumber: phoneNumber || null,
       passwordHash,
       role: 'child',
       dateOfBirth: dob,

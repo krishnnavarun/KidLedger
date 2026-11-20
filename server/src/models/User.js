@@ -17,6 +17,13 @@ const userSchema = new mongoose.Schema(
       trim: true,
       index: true,
     },
+    phoneNumber: {
+      type: String,
+      trim: true,
+      sparse: true,
+      index: true,
+      default: null,
+    },
     passwordHash: {
       type: String,
       required: [true, 'Password hash is required'],

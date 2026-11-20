@@ -9,7 +9,7 @@ This living document tracks the phase-by-phase implementation of **KidLedger Wal
 - [x] **Phase 1: Foundation, Infrastructure & Error Handling**
 - [x] **Phase 2: Authentication, Role-Based Access Control & Family Linking**
 - [x] **Phase 3: Wallets, Append-Only Ledger & Idempotent Transfers**
-- [ ] **Phase 4: Simulated Merchants, Rule Engine & Approval Workflow**
+- [x] **Phase 4: Simulated Merchants, Rule Engine & Approval Workflow**
 - [ ] **Phase 5: Money Requests & In-App Notifications**
 - [ ] **Phase 6: Frontend Development (React + Tailwind)**
 - [x] **DevOps Phase: Continuous Integration (CI) with GitHub Actions**
@@ -217,19 +217,63 @@ sequenceDiagram
 
 ---
 
-## 🛡️ Phase 4: Simulated Merchants, Rule Engine & Approval Workflow (Next Up)
+## 🛡️ Phase 4: Simulated Merchants, Rule Engine & Approval Workflow
 
-### Planned Scope:
-1. **Merchant Model (`src/models/Merchant.js`)**: Seeded merchant directory with categories (e.g., `gaming`, `fast_food`, `books`, `entertainment`, `groceries`).
-2. **Rule Model (`src/models/Rule.js`)**:
-   - Limits: `daily_limit`, `weekly_limit`, `monthly_limit`, `per_txn_cap`.
-   - Controls: `blocked_category`, `blocked_merchant`, `allow_only`.
-3. **Pure Rule Engine (`src/rules/ruleEngine.js`)**:
-   - Pure, deterministic function: `evaluateRules({ transaction, rules, historicalSpend }) => { decision, reason }`.
-   - Returns `APPROVE`, `BLOCK`, or `NEEDS_APPROVAL`.
-4. **Child Payment Execution & Parent Approval Flow**:
-   - `POST /api/v1/payments`: Child pays merchant; engine decides outcome.
-   - If `NEEDS_APPROVAL`: Marked as `pending`. Parent can approve (`POST /api/v1/transactions/:id/approve`) or decline (`POST /api/v1/transactions/:id/decline`).
+### 1. Key Engineering Concepts & Interview Talking Points
+
+1. **Pure & Deterministic Rule Engine**
+   - *Architecture Rule:* The rule engine (`evaluateRules`) is written as a 100% pure function with zero database or network calls.
+   - *Why:* Pure functions have no side effects, are deterministic ($f(x) \equiv y$ every time), and allow writing comprehensive unit tests covering tricky limit boundary conditions without mocking databases.
+2. **Deterministic Evaluation Precedence**
+   - The engine evaluates rules in strict hierarchical order:
+     1. Hard Blocks (e.g., `blocked_merchant`, `blocked_category`) $\rightarrow$ immediate `BLOCK`.
+     2. Allow-Only Whitelists (`allow_only`) $\rightarrow$ if not whitelisted, immediate `BLOCK`.
+     3. Financial Thresholds (`per_txn_cap`, `daily_limit`, `weekly_limit`, `monthly_limit`) $\rightarrow$ either `BLOCK` or escalate to `NEEDS_APPROVAL`.
+3. **Two-Phase Approval Workflow**
+   - Transactions violating soft limits enter a `pending` state instead of failing outright.
+   - Money is **not deducted** when a transaction is pending. Once the parent calls `/approve`, the child wallet balance is re-verified and atomically debited inside a transactional session.
+
+### 2. Payment & Approval Workflow Diagram
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Child as Child User
+    actor Parent as Parent User
+    participant API as Express API
+    participant Engine as Pure Rule Engine
+    participant DB as MongoDB (Replica Set)
+
+    Child->>API: POST /api/v1/payments { merchantId, amount: 25000 }
+    API->>DB: Check Child Balance & Fetch Active Rules
+    API->>API: Aggregate Historical Spend (today, week, month)
+    API->>Engine: evaluateRules(transaction, rules, historicalSpend)
+
+    alt Outcome 1: Rule APPROVED
+        Engine-->>API: { decision: 'APPROVE' }
+        API->>DB: Deduct Child Wallet + Write LedgerEntry
+        API-->>Child: 201 Created { status: 'completed' }
+    else Outcome 2: Hard Rule BLOCKED
+        Engine-->>API: { decision: 'BLOCK', reason: "Category 'gaming' is blocked" }
+        API->>DB: Record Transaction (status: 'declined')
+        API-->>Child: 200 OK { status: 'declined', reason }
+    else Outcome 3: Soft Cap NEEDS_APPROVAL
+        Engine-->>API: { decision: 'NEEDS_APPROVAL', reason: "Cap exceeded" }
+        API->>DB: Record Transaction (status: 'pending')
+        API-->>Child: 200 OK { status: 'pending', reason }
+        
+        Note over Parent, DB: Parent Reviews Pending Requests
+        Parent->>API: POST /api/v1/transactions/:id/approve
+        API->>DB: Re-check Child Balance >= Amount
+        API->>DB: Deduct Child Wallet + Append LedgerEntry
+        API->>DB: Update Transaction status -> 'completed'
+        API-->>Parent: 200 OK (Transaction Approved)
+    end
+```
+
+---
+
+## 📬 Phase 5: Money Requests & In-App Notifications (Next Up)
 
 
 
