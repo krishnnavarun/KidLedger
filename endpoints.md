@@ -17,6 +17,8 @@ This living document tracks all API endpoints in **KidLedger Wallet**, including
 - [x] **Merchants** (1 Endpoint)
 - [x] **Spending Rules** (4 Endpoints)
 - [x] **Payments & Approvals** (3 Endpoints)
+- [x] **Money Requests** (4 Endpoints)
+- [x] **In-App Notifications** (3 Endpoints)
 
 ---
 
@@ -562,4 +564,205 @@ This living document tracks all API endpoints in **KidLedger Wallet**, including
     }
   }
   ```
+
+---
+
+## 🙋 9. Money Requests (`/api/v1/requests`)
+
+### `POST /api/v1/requests` (Child Requests Money)
+* **Access:** `child` ONLY
+* **Headers:** `Authorization: Bearer <childAccessToken>`
+* **Description:** Child requests money from their linked parent with an explanation/reason. Automatically notifies the parent.
+* **Body:**
+  ```json
+  {
+    "amount": 25000,
+    "reason": "School science exhibition supplies"
+  }
+  ```
+* **Response `201 Created`:**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "request": {
+        "id": "674a...",
+        "childId": "674c...",
+        "parentId": "674p...",
+        "amount": 25000,
+        "reason": "School science exhibition supplies",
+        "status": "pending",
+        "decidedAt": null,
+        "decisionReason": null,
+        "transactionId": null,
+        "createdAt": "2026-11-20T12:00:00.000Z"
+      }
+    }
+  }
+  ```
+
+### `GET /api/v1/requests` (List Money Requests)
+* **Access:** `parent` or `child`
+* **Headers:** `Authorization: Bearer <token>`
+* **Query Params:**
+  - `status`: Filter by `pending`, `approved`, or `declined` (optional)
+  - `page`: Page number (default: 1)
+  - `limit`: Items per page (default: 20)
+* **Description:** Parents view incoming requests from their children; children view their own outgoing requests.
+* **Response `200 OK`:**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "requests": [
+        {
+          "id": "674a...",
+          "childId": {
+            "id": "674c...",
+            "name": "John Connor",
+            "email": "john@example.com"
+          },
+          "amount": 25000,
+          "reason": "School science exhibition supplies",
+          "status": "pending",
+          "createdAt": "2026-11-20T12:00:00.000Z"
+        }
+      ],
+      "pagination": {
+        "total": 1,
+        "page": 1,
+        "pages": 1
+      }
+    }
+  }
+  ```
+
+### `POST /api/v1/requests/:id/approve` (Parent Approves Request)
+* **Access:** `parent` ONLY
+* **Headers:**
+  - `Authorization`: `Bearer <parentAccessToken>`
+  - `Idempotency-Key: <unique-string>` (optional)
+* **Description:** Parent approves the request. Executes an atomic ledger transfer from parent wallet to child wallet, updates request status to `approved`, and sends an in-app notification to the child.
+* **Response `200 OK`:**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "request": {
+        "id": "674a...",
+        "status": "approved",
+        "decidedAt": "2026-11-20T12:05:00.000Z",
+        "transactionId": "674t..."
+      },
+      "transaction": {
+        "id": "674t...",
+        "type": "transfer",
+        "amount": 25000,
+        "status": "completed"
+      },
+      "message": "Money request approved and funds transferred"
+    }
+  }
+  ```
+
+### `POST /api/v1/requests/:id/decline` (Parent Declines Request)
+* **Access:** `parent` ONLY
+* **Headers:** `Authorization: Bearer <parentAccessToken>`
+* **Body (Optional):**
+  ```json
+  {
+    "reason": "Wait until your monthly allowance cycle"
+  }
+  ```
+* **Description:** Parent declines the money request with an optional reason. No money is moved, and the child is notified.
+* **Response `200 OK`:**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "request": {
+        "id": "674a...",
+        "status": "declined",
+        "decisionReason": "Wait until your monthly allowance cycle",
+        "decidedAt": "2026-11-20T12:05:00.000Z"
+      },
+      "message": "Money request declined"
+    }
+  }
+  ```
+
+---
+
+## 🔔 10. In-App Notifications (`/api/v1/notifications`)
+
+### `GET /api/v1/notifications` (List Notifications)
+* **Access:** Authenticated (`parent` or `child`)
+* **Headers:** `Authorization: Bearer <token>`
+* **Query Params:**
+  - `unreadOnly`: `true` or `false` (default: false)
+  - `page`: Page number (default: 1)
+  - `limit`: Items per page (default: 20)
+* **Description:** Retrieves paginated notifications and total unread count for the authenticated user.
+* **Response `200 OK`:**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "notifications": [
+        {
+          "id": "674n...",
+          "type": "money_request",
+          "title": "New Money Request",
+          "message": "John Connor requested ₹250.00 for: \"School science exhibition supplies\"",
+          "metadata": {
+            "requestId": "674a...",
+            "childName": "John Connor",
+            "amount": 25000
+          },
+          "readAt": null,
+          "createdAt": "2026-11-20T12:00:00.000Z"
+        }
+      ],
+      "unreadCount": 1,
+      "pagination": {
+        "total": 1,
+        "page": 1,
+        "pages": 1
+      }
+    }
+  }
+  ```
+
+### `PATCH /api/v1/notifications/:id/read` (Mark Notification as Read)
+* **Access:** Authenticated
+* **Headers:** `Authorization: Bearer <token>`
+* **Description:** Marks a single notification as read (`readAt` timestamp set).
+* **Response `200 OK`:**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "notification": {
+        "id": "674n...",
+        "readAt": "2026-11-20T12:10:00.000Z"
+      }
+    }
+  }
+  ```
+
+### `PATCH /api/v1/notifications/read-all` (Mark All as Read)
+* **Access:** Authenticated
+* **Headers:** `Authorization: Bearer <token>`
+* **Description:** Marks all unread notifications for the user as read.
+* **Response `200 OK`:**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "message": "All notifications marked as read",
+      "modifiedCount": 3
+    }
+  }
+  ```
+
 

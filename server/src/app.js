@@ -13,6 +13,8 @@ import transactionRoutes from './routes/transaction.routes.js';
 import merchantRoutes from './routes/merchant.routes.js';
 import ruleRoutes from './routes/rule.routes.js';
 import paymentRoutes from './routes/payment.routes.js';
+import requestRoutes from './routes/request.routes.js';
+import notificationRoutes from './routes/notification.routes.js';
 
 export function createApp() {
   const app = express();
@@ -54,6 +56,8 @@ export function createApp() {
         merchants: '/api/v1/merchants',
         rules: '/api/v1/rules',
         payments: '/api/v1/payments',
+        requests: '/api/v1/requests',
+        notifications: '/api/v1/notifications',
       },
     });
   });
@@ -67,6 +71,8 @@ export function createApp() {
   app.use('/api/v1/merchants', merchantRoutes);
   app.use('/api/v1/rules', ruleRoutes);
   app.use('/api/v1/payments', paymentRoutes);
+  app.use('/api/v1/requests', requestRoutes);
+  app.use('/api/v1/notifications', notificationRoutes);
 
   // 404 and Error Handling
   app.use(notFoundHandler);

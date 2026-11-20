@@ -10,7 +10,7 @@ This living document tracks the phase-by-phase implementation of **KidLedger Wal
 - [x] **Phase 2: Authentication, Role-Based Access Control & Family Linking**
 - [x] **Phase 3: Wallets, Append-Only Ledger & Idempotent Transfers**
 - [x] **Phase 4: Simulated Merchants, Rule Engine & Approval Workflow**
-- [ ] **Phase 5: Money Requests & In-App Notifications**
+- [x] **Phase 5: Money Requests & In-App Notifications**
 - [ ] **Phase 6: Frontend Development (React + Tailwind)**
 - [x] **DevOps Phase: Continuous Integration (CI) with GitHub Actions**
 - [ ] **Phase 7: Step-by-Step Docker Containerization & Deployment**
@@ -273,8 +273,79 @@ sequenceDiagram
 
 ---
 
-## 📬 Phase 5: Money Requests & In-App Notifications (Next Up)
+## 📬 Phase 5: Money Requests & In-App Notifications
 
+### 1. Key Engineering Concepts & Interview Talking Points
 
+1. **Asynchronous Fund Requests (Ask → Review → Atomic Deposit)**
+   - *Why:* In a minor-parent relationship, allowance isn't purely push-based (parent gives money on a schedule); children frequently require money on-demand for legitimate unplanned expenses (school books, bus passes, school projects).
+   - *Architecture:* The child initiates an asynchronous `MoneyRequest` specifying an amount and reason. The parent reviews this queue, and upon approval, an atomic `LedgerService.transferParentToChild` transfer runs inside a multi-document ACID session, crediting the child's wallet and debiting the parent's wallet.
+2. **Concurrency & Double-Approval Prevention**
+   - *Why:* If a parent accidentally double-taps "Approve" on their phone or multiple parents attempt to approve the same request simultaneously, the child could be credited twice for one request.
+   - *Protection:* The request's state is strictly checked (`status === 'pending'`). Once processed, the status is set to `approved` and timestamped (`decidedAt`), and duplicate approval calls return `400 INVALID_REQUEST_STATUS`.
+3. **Decoupled In-App Notification System**
+   - *Why:* Users need immediate visibility into state changes without relying solely on external delivery mechanisms (like SMS or Email).
+   - *Implementation:* The `Notification` model tracks notifications per user with unread counts (`readAt: null`), compound indexing on `(userId, createdAt: -1)`, and batch updates (`PATCH /api/v1/notifications/read-all`).
+4. **Lifecycle Event Hooks**
+   - In-app notifications are automatically triggered across all major lifecycle events:
+     - `money_request`: Parent notified when child requests funds.
+     - `request_approved` / `request_declined`: Child notified of parent decision.
+     - `payment_pending`: Parent notified when a purchase exceeds soft caps.
+     - `transfer_received`: Child notified when a friend sends them peer-to-peer money.
+
+### 2. Money Request & Notification Sequence Diagram
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Child as Child User
+    actor Parent as Parent User
+    participant API as Express API
+    participant Notif as Notification Service
+    participant Ledger as Ledger Service
+    participant DB as MongoDB (Replica Set)
+
+    Note over Child, API: 1. Child Requests Pocket Money
+    Child->>API: POST /api/v1/requests { amount: 25000, reason: "Science project" }
+    API->>DB: Verify active Parent-Child FamilyLink
+    API->>DB: Save MoneyRequest (status: 'pending')
+    API->>Notif: createNotification(parent, type: 'money_request')
+    Notif->>DB: Insert Notification for Parent
+    API-->>Child: 201 Created { request: { id, status: 'pending' } }
+
+    Note over Parent, API: 2. Parent Views Notification & Approves
+    Parent->>API: GET /api/v1/notifications (Unread Count: 1)
+    API-->>Parent: 200 OK (List notifications)
+    Parent->>API: POST /api/v1/requests/:id/approve
+    API->>DB: Check Request status === 'pending'
+    API->>Ledger: transferParentToChild(parent, child, amount)
+    Ledger->>DB: Atomic session: Debit Parent, Credit Child, Append 2 LedgerEntries
+    API->>DB: Update MoneyRequest (status: 'approved', decidedAt: now)
+    API->>Notif: createNotification(child, type: 'request_approved')
+    Notif->>DB: Insert Notification for Child
+    API-->>Parent: 200 OK { request, transaction, message: "Funds transferred" }
+
+    Note over Child, API: 3. Child Receives Notification & New Balance
+    Child->>API: GET /api/v1/notifications
+    API-->>Child: 200 OK (Notification: "Money Request Approved! 🎉")
+    Child->>API: GET /api/v1/wallets/me
+    API-->>Child: 200 OK { balance: 25000 }
+```
 
 ---
+
+## 🎨 Phase 6: Frontend Development (React + Tailwind CSS) (Next Up)
+
+The frontend web app will provide responsive, role-differentiated interfaces:
+- **Parent Portal:**
+  - Dashboard: Family overview, Parent wallet balance, quick top-up simulation.
+  - Controls: Child spending rules manager (category toggles, per-transaction caps, daily limits).
+  - Approvals: Interactive inbox for pending payment requests and money requests.
+  - Ledger & Statements: Full transaction history and reconciliation viewer.
+- **Child Portal:**
+  - Balance Card: Current wallet balance in ₹ INR.
+  - Payment Simulator: Pay seeded merchants, scan shop QR codes.
+  - Peer Transfer: Send money to friends by phone number (up to ₹300/day).
+  - Money Requests: Form to request funds with reason + request history tracker.
+  - Notifications Bell: In-app badge and notification list with mark-as-read actions.
+

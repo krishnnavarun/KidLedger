@@ -4,7 +4,9 @@ import { LedgerEntry } from '../models/LedgerEntry.js';
 import { Transaction } from '../models/Transaction.js';
 import { Merchant } from '../models/Merchant.js';
 import { Rule } from '../models/Rule.js';
+import { FamilyLink } from '../models/FamilyLink.js';
 import { FamilyService } from './family.service.js';
+import { NotificationService } from './notification.service.js';
 import { evaluateRules } from '../rules/ruleEngine.js';
 import { LedgerService } from './ledger.service.js';
 import { runInTransaction } from '../utils/transaction.js';
@@ -141,6 +143,25 @@ export class PaymentService {
         metadata: { note, merchantName: merchant.name },
       });
 
+      // Notify parent if linked
+      const link = await FamilyLink.findOne({ childId, status: 'active' });
+      if (link) {
+        const childUser = await User.findById(childId);
+        await NotificationService.createNotification({
+          userId: link.parentId,
+          type: 'payment_pending',
+          title: 'Payment Requires Approval',
+          message: `${childUser?.name || 'Child'} wants to pay ₹${(amount / 100).toFixed(2)} at ${merchant.name}. Reason: ${evaluation.reason}`,
+          metadata: {
+            transactionId: txn._id,
+            childId,
+            merchantId: merchant._id,
+            merchantName: merchant.name,
+            amount,
+          },
+        });
+      }
+
       return {
         decision: 'NEEDS_APPROVAL',
         status: 'pending',
@@ -260,6 +281,15 @@ export class PaymentService {
         createLedgerOptions
       );
 
+      // Notify child that payment was approved
+      await NotificationService.createNotification({
+        userId: childWallet.ownerId,
+        type: 'request_approved',
+        title: 'Payment Approved! 🎉',
+        message: `Your payment of ₹${(txn.amount / 100).toFixed(2)} was approved by your parent.`,
+        metadata: { transactionId: txn._id, amount: txn.amount },
+      });
+
       return txn;
     });
   }
@@ -286,6 +316,15 @@ export class PaymentService {
       reason: reason || 'Parent manually declined transaction',
     };
     await txn.save();
+
+    // Notify child that payment was declined
+    await NotificationService.createNotification({
+      userId: childWallet.ownerId,
+      type: 'request_declined',
+      title: 'Payment Declined',
+      message: `Your payment of ₹${(txn.amount / 100).toFixed(2)} was declined by your parent. Reason: ${txn.ruleDecision.reason}`,
+      metadata: { transactionId: txn._id, amount: txn.amount },
+    });
 
     return txn;
   }
@@ -477,6 +516,20 @@ export class PaymentService {
         ],
         createLedgerOptions
       );
+
+      // Notify recipient
+      await NotificationService.createNotification({
+        userId: recipient._id,
+        type: 'transfer_received',
+        title: 'Money Received! 💸',
+        message: `You received ₹${(amount / 100).toFixed(2)} from a friend!`,
+        metadata: {
+          transactionId: txn._id,
+          senderChildId,
+          amount,
+          note,
+        },
+      });
 
       return {
         status: 'completed',
